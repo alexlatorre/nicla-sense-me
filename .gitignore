@@ -1,0 +1,14 @@
+# Arduino
+*.elf
+*.bin
+*.hex
+*.map
+build/
+.arduino/
+arduino-cli.exe
+cli_path.txt
+*.txt
+
+# OS
+.DS_Store
+Thumbs.db
