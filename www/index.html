@@ -196,6 +196,7 @@
             <div style="text-align:center; margin-top:10px">
                 <div id="batIcon" style="font-size: 2rem;">🔋</div>
                 <div id="batStatusText" style="font-weight:bold; font-size:0.8rem; margin-top:5px; margin-bottom: 5px;">...</div>
+                <button id="resetBtn" style="background:var(--danger); font-size:0.7rem; padding: 5px 10px; margin-top:5px; width:100%; max-width:120px" onclick="resetBoard()">REBOOT BOARD</button>
             </div>
         </div>
 
@@ -220,7 +221,8 @@
             press:   "19b10009-0000-0000-0000-000000000000",
             gas:     "19b10010-0000-0000-0000-000000000000",
             bat:     "19b10011-0000-0000-0000-000000000000",
-            alt:     "19b10012-0000-0000-0000-000000000000"
+            alt:     "19b10012-0000-0000-0000-000000000000",
+            reset:   "19b10014-0000-0000-0000-000000000000"
         };
 
         const btn = document.getElementById('connectBtn');
@@ -241,10 +243,16 @@
 
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID.toLowerCase());
+                
+                // Save service globally for reset function
+                window.niclaService = service;
 
                 statusDiv.innerText = "🟢 Connected & Calibrated";
                 // Reveal the dashboard UI
-                document.getElementById('uiGrid').style.opacity = 1;
+                // Reveal the dashboard UI
+                const uiGrid = document.getElementById('uiGrid');
+                uiGrid.style.opacity = 1;
+                uiGrid.style.pointerEvents = 'auto'; // FIX: Re-enable clicks
                 btn.style.display = 'none';
 
                 // -----------------------------------------
@@ -253,9 +261,13 @@
                 // We subscribe to all characteristics to receive real-time updates.
                 
                 // Orientation (Heading, Pitch, Roll)
-                await setupChar(service, UUIDS.heading, (v) => updateHeading(v));
-                await setupChar(service, UUIDS.pitch, (v) => updateBar('Pitch', v, 90));
-                await setupChar(service, UUIDS.roll, (v) => updateCompass('Roll', v));
+                // Orientation (Heading, Pitch, Roll) - Combined Vector
+                // Reusing UUIDS.heading as the base for the orientation vector
+                await setupVectorChar(service, UUIDS.heading, (h, p, r) => {
+                    updateHeading(h);
+                    updateBar('Pitch', p, 90);
+                    updateCompass('Roll', r);
+                });
 
                 // 2. GRAVITY (Divide by 4096)
                 await setupVectorChar(service, UUIDS.vecGravity, (x, y, z) => {
@@ -418,6 +430,33 @@
 
     badge.innerText = text;
     badge.style.backgroundColor = color;
+}
+
+// REMOTE RESET FUNCTION
+async function resetBoard() {
+    if (!window.niclaService) return;
+    if (!confirm("⚠️ REBOOT BOARD?\nThis will disconnect Bluetooth.")) return;
+    
+    try {
+        const c = await window.niclaService.getCharacteristic(UUIDS.reset);
+        const resetCmd = new Uint8Array([1]);
+        
+        // Try WriteWithoutResponse first (faster, no ack needed)
+        if (c.properties.writeWithoutResponse) {
+             await c.writeValueWithoutResponse(resetCmd);
+        } else {
+             // Fallback to normal write, but catch the disconnect error
+             // because the board resets immediately
+             c.writeValue(resetCmd).catch(() => {});
+        }
+        
+        alert("Reboot command sent. Reconnecting...");
+        location.reload(); 
+    } catch(e) {
+        // If we get here, likely getting the characteristic failed
+        console.error(e);
+        alert("Error sending reset: " + e);
+    }
 }
     </script>
 </body>

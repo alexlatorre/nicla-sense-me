@@ -30,18 +30,18 @@
 #define UUID_GAS             "19B10010-0000-0000-0000-000000000000"
 #define UUID_BAT_STATE       "19B10011-0000-0000-0000-000000000000"
 #define UUID_ALT             "19B10012-0000-0000-0000-000000000000"
+#define UUID_RESET           "19B10014-0000-0000-0000-000000000000"
 
 BLEService niclaService(BLE_SERVICE_UUID);
 
-BLEFloatCharacteristic chHeading(UUID_HEADING, BLERead | BLENotify);
-BLEFloatCharacteristic chPitch(UUID_PITCH, BLERead | BLENotify);
-BLEFloatCharacteristic chRoll(UUID_ROLL, BLERead | BLENotify);
+BLECharacteristic      chOrientation(UUID_HEADING, BLERead | BLENotify, 12); // Combined H, P, R
 BLEFloatCharacteristic chTemp(UUID_TEMP, BLERead | BLENotify);
 BLEFloatCharacteristic chHum(UUID_HUM, BLERead | BLENotify);
 BLEFloatCharacteristic chPress(UUID_PRESS, BLERead | BLENotify);
 BLEFloatCharacteristic chAlt(UUID_ALT, BLERead | BLENotify);
 BLEIntCharacteristic   chGas(UUID_GAS, BLERead | BLENotify);
 BLEByteCharacteristic  chBatState(UUID_BAT_STATE, BLERead | BLENotify);
+BLEByteCharacteristic  chReset(UUID_RESET, BLEWrite | BLEWriteWithoutResponse);
 
 BLECharacteristic chGravVector(UUID_VEC_GRAVITY, BLERead | BLENotify, 12);
 BLECharacteristic chAccVector(UUID_VEC_ACCEL, BLERead | BLENotify, 12);
@@ -172,6 +172,12 @@ void setup() {
   Serial.begin(115200);
   nicla::begin(); nicla::leds.begin(); BHY2.begin();
 
+  // Startup Flash: Red -> Green -> Blue -> Off
+  nicla::leds.setColor(255, 0, 0); delay(200);
+  nicla::leds.setColor(0, 255, 0); delay(200);
+  nicla::leds.setColor(0, 0, 255); delay(200);
+  nicla::leds.setColor(0, 0, 0);
+
   ori.begin(); accel.begin(); 
   gravity.begin(); // Start sensor with official ID 
   
@@ -182,9 +188,7 @@ void setup() {
   BLE.setLocalName("Nicla_V9.4"); 
   BLE.setAdvertisedService(niclaService);
 
-  niclaService.addCharacteristic(chHeading);
-  niclaService.addCharacteristic(chPitch);
-  niclaService.addCharacteristic(chRoll);
+  niclaService.addCharacteristic(chOrientation);
   niclaService.addCharacteristic(chGravVector);
   niclaService.addCharacteristic(chAccVector);  
   niclaService.addCharacteristic(chTemp);
@@ -193,6 +197,7 @@ void setup() {
   niclaService.addCharacteristic(chAlt);
   niclaService.addCharacteristic(chGas);
   niclaService.addCharacteristic(chBatState);
+  niclaService.addCharacteristic(chReset);
 
   BLE.addService(niclaService);
   BLE.advertise();
@@ -245,9 +250,9 @@ void loop() {
         float gravVector[3] = { gx, gy, gz };
         float accelVector[3]    = { (float)accel.x(), (float)accel.y(), (float)accel.z() };
 
-        chHeading.writeValue(h);
-        chPitch.writeValue(p);
-        chRoll.writeValue(r);
+        float orientationVector[3] = { h, p, r };
+        chOrientation.writeValue((byte*)orientationVector, 12);
+        
         chGravVector.writeValue((byte*)gravVector, 12);
         chAccVector.writeValue((byte*)accelVector, 12);
         chTemp.writeValue(t);
@@ -256,6 +261,13 @@ void loop() {
         chAlt.writeValue(alt);
         chGas.writeValue(g);
         chBatState.writeValue(batteryCode);
+      }
+
+      // Check for Reset Command
+      if (chReset.written()) {
+        if (chReset.value() == 1) {
+           NVIC_SystemReset();
+        }
       }
   } else {
       // If no client, wait a bit to save power and not saturate loop
